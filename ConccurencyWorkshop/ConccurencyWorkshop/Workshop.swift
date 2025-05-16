@@ -75,23 +75,98 @@ actor SearchService {
         return SearchViewModel(music: try await music, movies: try await movies, podcasts: try await podcasts)
     }
         
+    func resultSequenceSequencial(forQueries queries: [String], mediaType: MediaType?) async throws -> AsyncThrowingStream<BatchResults, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                for query in queries {
+                    do {
+                        let results = try await self.results(matching: query, mediaType: mediaType)
+                        let batch = BatchResults(query: query, results: results)
+                        continuation.yield(batch)
+                    } catch {
+                        return continuation.finish(throwing: error)
+                    }
+                }
+                continuation.finish()
+            }
+        }
+    }
+    
+    func resultSequenceConccurent(forQueries queries: [String], mediaType: MediaType?) async throws -> AsyncThrowingStream<BatchResults, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    try await withThrowingTaskGroup(of: BatchResults.self) { group in
+                        for query in queries {
+                            group.addTask {
+                                let results = try await self.results(matching: query, mediaType: mediaType)
+                                return BatchResults(query: query, results: results)
+                            }
+                        }
+                        
+                        for try await batch in group {
+                            continuation.yield(batch)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+    
+    func conccurentWithSequencial(forQueries queries: [String], mediaType: MediaType?) async throws -> AsyncThrowingStream<BatchResults, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                let tasks = queries.map { query in
+                    Task {
+                        try await results(matching: query, mediaType: mediaType)
+                    }
+                }
+                
+                for (query, task) in zip(queries, tasks) {
+                    do {
+                        let results = try await task.value
+                        let batch = BatchResults(query: query, results: results)
+                        continuation.yield(batch)
+                    } catch {
+                        return continuation.finish(throwing: error)
+                    }
+                }
+                
+                continuation.finish()
+            }
+        }
+    }
 }
+    
+    struct BatchResults {
+        var query: String
+        var results: [SearchResult]
+    }
 
 final class Program {
     func run() {
         Task {
             let service = SearchService()
-            do {
-                async let viewModelA = service.viewModel(forQuery: "Kelly Family")
-                async let viewModelB = service.viewModel(forQuery: "Kelly Family")
-                
-                try await print("Music: \(viewModelA.music.count) Movies: \(viewModelA.movies.count) Podcasts: \(viewModelA.podcasts.count)")
-                try await print("Music: \(viewModelB.music.count) Movies: \(viewModelB.movies.count) Podcasts: \(viewModelB.podcasts.count)")
-                
-                let viewModelC = try await service.viewModel(forQuery: "Kelly Family")
-                print("Music: \(viewModelC.music.count) Movies: \(viewModelC.movies.count) Podcasts: \(viewModelC.podcasts.count)")
-            } catch {
-                print("Error: \(error)")
+//            do {
+//                async let viewModelA = service.viewModel(forQuery: "Kelly Family")
+//                async let viewModelB = service.viewModel(forQuery: "Kelly Family")
+//                
+//                try await print("Music: \(viewModelA.music.count) Movies: \(viewModelA.movies.count) Podcasts: \(viewModelA.podcasts.count)")
+//                try await print("Music: \(viewModelB.music.count) Movies: \(viewModelB.movies.count) Podcasts: \(viewModelB.podcasts.count)")
+//                
+//                let viewModelC = try await service.viewModel(forQuery: "Kelly Family")
+//                print("Music: \(viewModelC.music.count) Movies: \(viewModelC.movies.count) Podcasts: \(viewModelC.podcasts.count)")
+//            } catch {
+//                print("Error: \(error)")
+//            }
+            
+            
+            let vc = try await service.conccurentWithSequencial(forQueries: ["Mettalica", "Star Wars", "Queen", "Friends"], mediaType: .movie)
+            for try await batch in vc {
+                print("Query: \(batch.query) Results: \(batch.results.count)")
             }
         }
     }
