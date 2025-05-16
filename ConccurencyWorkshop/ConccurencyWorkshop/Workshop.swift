@@ -87,6 +87,9 @@ final class Program {
                 
                 try await print("Music: \(viewModelA.music.count) Movies: \(viewModelA.movies.count) Podcasts: \(viewModelA.podcasts.count)")
                 try await print("Music: \(viewModelB.music.count) Movies: \(viewModelB.movies.count) Podcasts: \(viewModelB.podcasts.count)")
+                
+                let viewModelC = try await service.viewModel(forQuery: "Kelly Family")
+                print("Music: \(viewModelC.music.count) Movies: \(viewModelC.movies.count) Podcasts: \(viewModelC.podcasts.count)")
             } catch {
                 print("Error: \(error)")
             }
