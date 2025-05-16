@@ -163,10 +163,12 @@ final class Program {
 //                print("Error: \(error)")
 //            }
             
-            
-            let vc = try await service.conccurentWithSequencial(forQueries: ["Mettalica", "Star Wars", "Queen", "Friends"], mediaType: .movie)
-            for try await batch in vc {
-                print("Query: \(batch.query) Results: \(batch.results.count)")
+            do {
+                for try await batch in try await service.resultSequenceSequencial(forQueries: ["Mettalica", "Star Wars", "Queen", "Friends"], mediaType: .movie) {
+                    print("Query: \(batch.query) Results: \(batch.results.count)")
+                }
+            } catch {
+                print("Error: \(error)")
             }
         }
     }
